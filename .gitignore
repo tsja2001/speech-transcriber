@@ -1,0 +1,22 @@
+# Environment
+.env
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+
+# Cache
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# Audio files
+audio/

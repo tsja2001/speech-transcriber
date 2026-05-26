@@ -1,0 +1,56 @@
+[project]
+name = "speech-transcriber"
+version = "0.1.0"
+description = "CLI speech-to-text tool with pluggable providers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "cos-python-sdk-v5>=1.9.43",
+    "tencentcloud-sdk-python>=3.1.101",
+    "typer>=0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/speech_transcriber"]
+
+[project.scripts]
+speech-transcriber = "speech_transcriber.cli:app"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "smoke: tests that call real external services",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = true
+packages = ["speech_transcriber"]
