@@ -30,6 +30,43 @@ def test_parse_result_detail_uses_final_sentence_and_speaker() -> None:
     assert result.segments[0].speaker == "SPEAKER_0"
 
 
+def test_parse_result_detail_uses_role_name_speaker_id() -> None:
+    task_status = SimpleNamespace(
+        AudioDuration=2.5,
+        ResultDetail=[
+            SimpleNamespace(
+                FinalSentence="hello there",
+                StartMs=1000,
+                EndMs=2500,
+                SpeakerId="HOST",
+            )
+        ],
+    )
+
+    result = parse_task_status(task_status, provider="tencent_cloud")
+
+    assert result.has_diarization is True
+    assert result.segments[0].speaker == "HOST"
+
+
+def test_parse_result_detail_prefers_speaker_role_name() -> None:
+    task_status = SimpleNamespace(
+        ResultDetail=[
+            SimpleNamespace(
+                FinalSentence="hello there",
+                StartMs=1000,
+                EndMs=2500,
+                SpeakerId=0,
+                SpeakerRoleName="HOST",
+            )
+        ],
+    )
+
+    result = parse_task_status(task_status, provider="tencent_cloud")
+
+    assert result.segments[0].speaker == "HOST"
+
+
 def test_parse_timestamped_result_fallback() -> None:
     task_status = {
         "AudioDuration": 65.0,

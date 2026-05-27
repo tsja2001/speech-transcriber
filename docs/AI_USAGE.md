@@ -17,6 +17,85 @@ For plain text:
 uv run speech-transcriber transcribe AUDIO_PATH --output text
 ```
 
+To write the result to a file instead of printing the transcript to stdout:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH \
+  --provider tencent_cloud \
+  --output json \
+  --output-file /path/to/transcript.json
+```
+
+When `--output-file` points to a directory, or to a path without a file
+extension, the CLI creates that directory and writes an auto-named file:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH \
+  --provider tencent_cloud \
+  --output text \
+  --output-file /path/to/transcripts
+```
+
+Auto-generated filenames use:
+
+```text
+YYYY-MM-DD-HH:MM:SS-original-audio-filename.json
+YYYY-MM-DD-HH:MM:SS-original-audio-filename.txt
+```
+
+For example: `2026-05-27-15:04:05-audio.mp3.json`.
+
+## Tencent Cloud Speaker Role Separation
+
+Speaker role separation is optional. Omit `--speaker-role-*` arguments to keep
+the normal transcription behavior.
+
+To identify one target speaker in a multi-speaker recording, pass a stable role
+name and a clean voice sample for that speaker:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH \
+  --provider tencent_cloud \
+  --output json \
+  --speaker-role-name TARGET \
+  --speaker-role-audio /path/to/target-speaker.wav
+```
+
+If the voice sample is already available as a URL Tencent Cloud can download:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH \
+  --provider tencent_cloud \
+  --output json \
+  --speaker-role-name TARGET \
+  --speaker-role-audio-url "https://example.com/target-speaker.wav"
+```
+
+Matched target-speaker segments return `speaker: "TARGET"`. Other speaker
+segments may still return generic labels such as `SPEAKER_0` or `SPEAKER_1`.
+Consumer projects can isolate the target speaker by filtering:
+
+```python
+target_text = " ".join(
+    segment["text"]
+    for segment in result["segments"]
+    if segment.get("speaker") == "TARGET"
+)
+```
+
+Tencent Cloud constraints handled by this CLI:
+
+- Role separation uses Tencent Cloud `SpeakerDiarization=3` and `SpeakerRoles`
+  inside the provider implementation.
+- The request engine is automatically switched to `16k_zh_en`, which Tencent
+  Cloud requires for role separation.
+- Tencent Cloud currently accepts only one speaker role voice sample for this
+  API.
+- Local role voice samples are uploaded to the configured temporary COS bucket
+  and cleaned up according to `TENCENT_COS_DELETE_AFTER_TRANSCRIBE`.
+- Use clean single-speaker role audio, preferably within 30 seconds and no more
+  than 45 seconds.
+
 The JSON output is a `TranscriptResult`:
 
 ```json

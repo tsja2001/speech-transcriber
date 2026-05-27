@@ -27,11 +27,76 @@ uv run speech-transcriber transcribe /path/to/audio.mp3 --provider tencent_cloud
 uv run speech-transcriber transcribe ./audio/audio.mp3 --output text
 ```
 
+写入指定文件：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.mp3 \
+  --output json \
+  --output-file ./transcripts/audio.json
+```
+
+只指定输出目录时，CLI 会自动创建目录并生成文件名：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.mp3 \
+  --output text \
+  --output-file ./transcripts
+```
+
+自动文件名格式为：
+
+```text
+YYYY-MM-DD-HH:MM:SS-原输入音频文件名.json
+YYYY-MM-DD-HH:MM:SS-原输入音频文件名.txt
+```
+
+例如 `2026-05-27-15:04:05-audio.mp3.json`。
+
+不开启角色分离时，不传任何 `--speaker-role-*` 参数即可。开启腾讯云角色分离时，给目标说话人的角色名和一段干净声纹样本：
+
+```bash
+uv run speech-transcriber transcribe ./audio/podcast.mp3 \
+  --provider tencent_cloud \
+  --output json \
+  --output-file ./output
+  --speaker-role-name TARGET \
+  --speaker-role-audio ./audio/target-speaker.wav
+```
+
+如果声纹样本已经有腾讯云可下载的 URL，也可以直接传 URL：
+
+```bash
+uv run speech-transcriber transcribe "./audio/短-爱否播客且看特努斯能否 Make Apple Great Again.m4a" \
+    --provider tencent_cloud \
+    --output json \
+    --output-file ./output \
+    --speaker-role-name TARGET \
+    --speaker-role-audio-url "https://person-1330315023.cos.ap-beijing.myqcloud.com/podlator/asr-audio/27%E7%A7%92%E7%9B%AE%E6%A0%87%E8%A7%92%E8%89%B2%E9%9F%B3%E9%A2%91.m4a"
+```
+
+
+角色分离结果仍然输出统一的 `TranscriptResult`。匹配成功后，对应片段的 `speaker` 会是你传入的角色名，例如 `TARGET`；未匹配到目标角色的片段仍可能是 `SPEAKER_0`、`SPEAKER_1` 等普通话者标签。只提取目标角色文本时，可以按 `segments[].speaker == "TARGET"` 过滤。
+
+腾讯云角色分离限制：
+
+- 该能力会在内部使用腾讯云 `SpeakerDiarization=3` 和 `SpeakerRoles`。
+- 腾讯云只支持 `16k_zh_en` 引擎，CLI 开启角色分离后会自动切换到这个引擎。
+- 当前腾讯云接口只支持传入一组声纹信息。
+- 声纹样本建议使用目标说话人的纯净人声，建议 30 秒内，最长不超过 45 秒。
+- 本地声纹样本会临时上传到配置的 COS，任务结束后按 `TENCENT_COS_DELETE_AFTER_TRANSCRIBE` 清理。
+
 使用 Podlator 里已有的测试音频：
 
 ```bash
 uv run speech-transcriber transcribe \
   /Users/yangzhuoran/program/podlator/data/audio/0f150b76-3af6-44c2-a1ea-97c64c69f55e/audio.mp3 \
+  --provider tencent_cloud \
+  --output json
+```
+
+```bash
+uv run speech-transcriber transcribe \
+  /Users/yangzhuoran/program/speech-transcriber/audio/彭林5.26直播15分钟.m4a \
   --provider tencent_cloud \
   --output json
 ```

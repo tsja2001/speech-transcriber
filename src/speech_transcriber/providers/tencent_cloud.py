@@ -12,6 +12,7 @@ from tencentcloud.asr.v20190614 import models  # type: ignore[import-untyped]
 
 from speech_transcriber.errors import ProviderError
 from speech_transcriber.models import (
+    SpeakerRole,
     TranscribeOptions,
     TranscriptResult,
     TranscriptSegment,
@@ -72,7 +73,6 @@ class TencentCloudTranscriber:
         options: TranscribeOptions,
     ) -> TranscriptResult:
         """Upload audio to COS, run Tencent ASR, and parse the completed result."""
-        del options
         if not await asyncio.to_thread(audio_path.exists):
             raise ProviderError(
                 TENCENT_PROVIDER_NAME,
@@ -81,25 +81,60 @@ class TencentCloudTranscriber:
             )
 
         object_key: str | None = None
+        role_object_key: str | None = None
         try:
             object_key, audio_url = await self.cos_storage.upload_and_presign(
                 audio_path
             )
-            task_id = await self._create_task(audio_url)
+            speaker_role = options.speaker_role
+            if speaker_role and speaker_role.audio_path:
+                if not await asyncio.to_thread(speaker_role.audio_path.exists):
+                    raise ProviderError(
+                        TENCENT_PROVIDER_NAME,
+                        f"Speaker role audio file not found: {speaker_role.audio_path}",
+                        retryable=False,
+                    )
+                role_object_key, role_audio_url = (
+                    await self.cos_storage.upload_and_presign(speaker_role.audio_path)
+                )
+                speaker_role = SpeakerRole(
+                    name=speaker_role.name,
+                    audio_url=role_audio_url,
+                )
+            task_id = await self._create_task(audio_url, speaker_role)
             task_status = await self._poll_until_finished(task_id)
-            return parse_task_status(task_status, provider=TENCENT_PROVIDER_NAME)
+            result = parse_task_status(task_status, provider=TENCENT_PROVIDER_NAME)
+            if speaker_role:
+                result.metadata["speaker_role"] = {
+                    "name": speaker_role.name,
+                    "enabled": True,
+                }
+            return result
         finally:
+            if role_object_key and self.cos_storage.delete_after_transcribe:
+                await self.cos_storage.delete(role_object_key)
             if object_key and self.cos_storage.delete_after_transcribe:
                 await self.cos_storage.delete(object_key)
 
-    async def _create_task(self, audio_url: str) -> int:
+    async def _create_task(
+        self,
+        audio_url: str,
+        speaker_role: SpeakerRole | None,
+    ) -> int:
         request = models.CreateRecTaskRequest()
-        request.EngineModelType = self.engine_model_type
+        request.EngineModelType = (
+            "16k_zh_en" if speaker_role else self.engine_model_type
+        )
         request.ChannelNum = 1
         request.ResTextFormat = self.res_text_format
         request.SourceType = 0
         request.Url = audio_url
-        request.SpeakerDiarization = self.speaker_diarization
+        request.SpeakerDiarization = 3 if speaker_role else self.speaker_diarization
+        if speaker_role:
+            role_info = models.SpeakerRoleInfo()
+            role_info.RoleName = speaker_role.name
+            role_info.RoleAudioUrl = speaker_role.audio_url
+            request.SpeakerRoles = [role_info]
         request.EmotionRecognition = 0
         request.EmotionalEnergy = 0
         request.FilterDirty = 0
@@ -186,11 +221,9 @@ def _parse_result_detail(result_detail: list[Any]) -> list[TranscriptSegment]:
 
         start_ms = float(_get_value(item, "StartMs", 0) or 0)
         end_ms = float(_get_value(item, "EndMs", start_ms) or start_ms)
-        speaker_id = _get_value(item, "SpeakerId", None)
-        speaker = (
-            f"SPEAKER_{speaker_id}"
-            if speaker_id is not None and int(speaker_id) >= 0
-            else None
+        speaker = _speaker_label(
+            _get_value(item, "SpeakerRoleName", None)
+            or _get_value(item, "SpeakerId", None)
         )
         segments.append(
             TranscriptSegment(
@@ -202,6 +235,21 @@ def _parse_result_detail(result_detail: list[Any]) -> list[TranscriptSegment]:
             )
         )
     return segments
+
+
+def _speaker_label(speaker_id: Any) -> str | None:
+    if speaker_id is None:
+        return None
+    if isinstance(speaker_id, int):
+        return f"SPEAKER_{speaker_id}" if speaker_id >= 0 else None
+    speaker_text = str(speaker_id).strip()
+    if not speaker_text:
+        return None
+    try:
+        speaker_number = int(speaker_text)
+    except ValueError:
+        return speaker_text
+    return f"SPEAKER_{speaker_number}" if speaker_number >= 0 else None
 
 
 def _parse_result_fallback(result: str) -> list[TranscriptSegment]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -28,12 +29,21 @@ class TranscriptResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SpeakerRole(BaseModel):
+    """Voice sample used to identify one target speaker role."""
+
+    name: str
+    audio_path: Path | None = None
+    audio_url: str | None = None
+
+
 class TranscribeOptions(BaseModel):
     """Provider-neutral transcription options."""
 
     language: str = "en"
     diarize: bool = True
     provider: str = "tencent_cloud"
+    speaker_role: SpeakerRole | None = None
 
 
 class ErrorInfo(BaseModel):

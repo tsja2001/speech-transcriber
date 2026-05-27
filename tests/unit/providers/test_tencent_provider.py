@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from speech_transcriber.errors import ProviderError
-from speech_transcriber.models import TranscribeOptions
+from speech_transcriber.models import SpeakerRole, TranscribeOptions
 from speech_transcriber.providers.tencent_cloud import TencentCloudTranscriber
 
 
@@ -86,6 +86,98 @@ async def test_transcribe_uploads_creates_polls_and_cleans_up(
     assert cos.deleted == ["podlator/audio.mp3"]
     assert client.create_requests[0].Url == "https://cos.example.com/audio.mp3"
     assert client.describe_task_ids == [123, 123]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_uploads_role_audio_and_creates_role_separation_task(
+    sample_audio: Path,
+    tmp_path: Path,
+) -> None:
+    role_audio = tmp_path / "host.wav"
+    role_audio.write_bytes(b"voice")
+    cos = FakeCosStorage()
+    client = FakeAsrClient(
+        [
+            SimpleNamespace(
+                Status=2,
+                AudioDuration=1.0,
+                ResultDetail=[
+                    SimpleNamespace(
+                        FinalSentence="hello",
+                        StartMs=0,
+                        EndMs=1000,
+                        SpeakerId="HOST",
+                    )
+                ],
+            ),
+        ]
+    )
+    transcriber = TencentCloudTranscriber(
+        client=client,
+        cos_storage=cos,
+        engine_model_type="16k_zh_large",
+        poll_interval_seconds=0,
+    )
+
+    result = await transcriber.transcribe(
+        sample_audio,
+        TranscribeOptions(
+            speaker_role=SpeakerRole(name="HOST", audio_path=role_audio),
+        ),
+    )
+
+    request = client.create_requests[0]
+    assert request.EngineModelType == "16k_zh_en"
+    assert request.SpeakerDiarization == 3
+    assert request.SpeakerRoles[0].RoleName == "HOST"
+    assert request.SpeakerRoles[0].RoleAudioUrl == "https://cos.example.com/audio.mp3"
+    assert cos.uploaded == [sample_audio, role_audio]
+    assert cos.deleted == ["podlator/audio.mp3", "podlator/audio.mp3"]
+    assert result.has_diarization is True
+    assert result.segments[0].speaker == "HOST"
+    assert result.metadata["speaker_role"]["name"] == "HOST"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_uses_role_audio_url_without_uploading_role_audio(
+    sample_audio: Path,
+) -> None:
+    cos = FakeCosStorage()
+    client = FakeAsrClient(
+        [
+            SimpleNamespace(
+                Status=2,
+                AudioDuration=1.0,
+                ResultDetail=[
+                    SimpleNamespace(
+                        FinalSentence="hello",
+                        StartMs=0,
+                        EndMs=1000,
+                        SpeakerId="HOST",
+                    )
+                ],
+            ),
+        ]
+    )
+    transcriber = TencentCloudTranscriber(
+        client=client,
+        cos_storage=cos,
+        poll_interval_seconds=0,
+    )
+
+    await transcriber.transcribe(
+        sample_audio,
+        TranscribeOptions(
+            speaker_role=SpeakerRole(
+                name="HOST",
+                audio_url="https://example.com/host.wav",
+            ),
+        ),
+    )
+
+    request = client.create_requests[0]
+    assert request.SpeakerRoles[0].RoleAudioUrl == "https://example.com/host.wav"
+    assert cos.uploaded == [sample_audio]
 
 
 @pytest.mark.asyncio
