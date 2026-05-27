@@ -7,11 +7,17 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ENV_FILE = PROJECT_ROOT / ".env"
+
 
 class Settings(BaseSettings):
     """Runtime configuration for the CLI and providers."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=(PROJECT_ENV_FILE, ".env"),
+        env_file_encoding="utf-8",
+    )
 
     default_provider: str = "tencent_cloud"
 
