@@ -52,7 +52,91 @@ YYYY-MM-DD-HH:MM:SS-原输入音频文件名.txt
 
 例如 `2026-05-27-15:04:05-audio.mp3.json`。
 
-不开启角色分离时，不传任何 `--speaker-role-*` 参数即可。开启腾讯云角色分离时，给目标说话人的角色名和一段干净声纹样本：
+## 腾讯云 ASR 模式
+
+腾讯云录音文件识别通过 `EngineModelType` 区分常规模型和大模型。CLI 提供 `--asr-mode`
+快捷模式，也允许用底层参数覆盖。
+
+常规模型中文普通话：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.m4a \
+  --provider tencent_cloud \
+  --asr-mode standard \
+  --output json
+```
+
+大模型中文普通话/方言/英文：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.m4a \
+  --provider tencent_cloud \
+  --asr-mode large \
+  --output json
+```
+
+普通说话人分离：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.m4a \
+  --provider tencent_cloud \
+  --asr-mode diarization \
+  --output json
+```
+
+也可以直接指定腾讯云引擎，例如使用中英粤+方言大模型：
+
+```bash
+uv run speech-transcriber transcribe ./audio/audio.m4a \
+  --provider tencent_cloud \
+  --engine-model-type 16k_zh_en \
+  --output json
+```
+
+常用引擎：
+
+- `16k_zh`：中文普通话通用引擎，常规模型。
+- `16k_zh_large`：普方英大模型。
+- `16k_zh_en`：中英粤+9种方言大模型，角色声纹识别必须使用该引擎。
+- `16k_multi_lang`：多语种大模型，部分返回格式参数只能为 `0`。
+- `8k_zh` / `8k_en`：电话通讯场景常规模型。
+- `8k_zh_large`：中文电话场景大模型。
+
+腾讯云录音文件识别支持的音频格式包括 `wav`、`mp3`、`m4a`、`flv`、`mp4`、`wma`、
+`3gp`、`amr`、`aac`、`ogg-opus`、`flac`。本 CLI 使用 COS URL 提交，腾讯云文档限制为
+音频 URL 时长不超过 5 小时、文件不超过 1GB。
+
+## 腾讯云可选参数
+
+CLI 支持记录和传递这些腾讯云 `CreateRecTask` 参数：
+
+```bash
+--engine-model-type      # EngineModelType
+--channel-num            # ChannelNum，16k 音频只能为 1；8k 双声道电话可为 2
+--res-text-format        # ResTextFormat，0-5
+--speaker-diarization    # 0 关闭；1 普通说话人分离；3 角色声纹分离
+--speaker-number         # 0 自动；1-10 指定人数，16k 引擎不支持指定人数
+--hotword-id             # 热词表 ID
+--hotword-list           # 临时热词表，例如 "腾讯云|10,ASR|11"
+--customization-id       # 自学习定制模型 ID
+--emotion-recognition    # 情绪识别，增值功能
+--emotional-energy       # 情绪能量值
+--convert-num-mode       # 阿拉伯数字转换
+--filter-dirty           # 脏词过滤
+--filter-punc            # 标点过滤
+--filter-modal           # 语气词过滤
+--sentence-max-length    # 字幕单标点最大字数，需 ResTextFormat=3
+--keyword-lib-id         # 关键词识别 ID，可重复传入
+--replace-text-id        # 替换词汇表 ID
+```
+
+注意：
+
+- `ResTextFormat=4`、`ResTextFormat=5`、情绪识别、角色声纹识别等属于腾讯云增值能力，可能消耗对应资源包或触发后付费。
+- `hotword-list` 和 `hotword-id` 同时传入时，腾讯云以 `hotword-list` 为准。
+- 部分语种引擎只支持 `ResTextFormat=0`，例如多语种大模型及日/韩/越/德等引擎。
+
+不开启角色声纹识别时，不传任何 `--speaker-role-*` 参数即可。开启腾讯云角色声纹识别时，给目标说话人的角色名和一段干净声纹样本：
 
 ```bash
 uv run speech-transcriber transcribe ./audio/podcast.mp3 \
@@ -80,7 +164,7 @@ uv run speech-transcriber transcribe "./audio/短-爱否播客且看特努斯能
 腾讯云角色分离限制：
 
 - 该能力会在内部使用腾讯云 `SpeakerDiarization=3` 和 `SpeakerRoles`。
-- 腾讯云只支持 `16k_zh_en` 引擎，CLI 开启角色分离后会自动切换到这个引擎。
+- 腾讯云只支持 `16k_zh_en` 引擎，CLI 开启角色声纹识别后会自动切换到这个引擎。
 - 当前腾讯云接口只支持传入一组声纹信息。
 - 声纹样本建议使用目标说话人的纯净人声，建议 30 秒内，最长不超过 45 秒。
 - 本地声纹样本会临时上传到配置的 COS，任务结束后按 `TENCENT_COS_DELETE_AFTER_TRANSCRIBE` 清理。

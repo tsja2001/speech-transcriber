@@ -45,6 +45,64 @@ YYYY-MM-DD-HH:MM:SS-original-audio-filename.txt
 
 For example: `2026-05-27-15:04:05-audio.mp3.json`.
 
+## Tencent Cloud ASR Modes and Options
+
+Use `--asr-mode` for the common Tencent Cloud billing/feature paths:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH --asr-mode standard --output json
+uv run speech-transcriber transcribe AUDIO_PATH --asr-mode large --output json
+uv run speech-transcriber transcribe AUDIO_PATH --asr-mode diarization --output json
+```
+
+Modes:
+
+- `standard`: uses `16k_zh`, the regular Chinese Mandarin engine.
+- `large`: uses `16k_zh_large`, the large Chinese dialect/English engine.
+- `diarization`: enables normal speaker separation with
+  `SpeakerDiarization=1` and `SpeakerNumber=0`.
+- `role`: role voiceprint separation. This also requires the
+  `--speaker-role-*` arguments below.
+
+You can override mode defaults with Tencent Cloud request options:
+
+```bash
+uv run speech-transcriber transcribe AUDIO_PATH \
+  --provider tencent_cloud \
+  --engine-model-type 16k_zh_en \
+  --res-text-format 3 \
+  --hotword-list "特努斯|11,Apple|8" \
+  --filter-modal 1 \
+  --output json
+```
+
+Supported Tencent Cloud option flags:
+
+```text
+--engine-model-type, --channel-num, --res-text-format
+--speaker-diarization, --speaker-number
+--hotword-id, --hotword-list, --customization-id
+--emotion-recognition, --emotional-energy
+--convert-num-mode, --filter-dirty, --filter-punc, --filter-modal
+--sentence-max-length, --keyword-lib-id, --replace-text-id
+```
+
+Important Tencent Cloud constraints from the 2026-02-06 API document:
+
+- `16k_zh`, `8k_zh`, and `8k_en` are regular engines; `16k_zh_large`,
+  `16k_zh_en`, `16k_multi_lang`, `16k_en_large`, and `8k_zh_large` are large
+  model engines.
+- Normal speaker separation uses `SpeakerDiarization=1`. Role voiceprint
+  separation uses `SpeakerDiarization=3` plus `SpeakerRoles`.
+- Role voiceprint separation only supports `16k_zh_en`; this provider forces
+  that engine when `--speaker-role-*` is used.
+- `ResTextFormat=4`, `ResTextFormat=5`, emotion recognition, and role
+  voiceprint separation are value-added features that may consume add-on
+  packages or trigger postpaid billing.
+- `hotword-list` takes precedence over `hotword-id` when both are supplied.
+- For COS URL submission, Tencent Cloud documents a maximum audio duration of
+  5 hours and file size of 1GB.
+
 ## Tencent Cloud Speaker Role Separation
 
 Speaker role separation is optional. Omit `--speaker-role-*` arguments to keep

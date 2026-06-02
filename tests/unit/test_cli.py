@@ -179,6 +179,59 @@ def test_transcribe_passes_speaker_role_audio_path(
     assert fake_transcriber.options.speaker_role.audio_url is None
 
 
+def test_transcribe_passes_tencent_asr_options(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"audio")
+    fake_transcriber = FakeTranscriber()
+    monkeypatch.setattr(
+        "speech_transcriber.cli.get_transcriber",
+        lambda settings, provider=None: fake_transcriber,
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "transcribe",
+            str(audio_path),
+            "--provider",
+            "fake",
+            "--asr-mode",
+            "diarization",
+            "--engine-model-type",
+            "16k_zh",
+            "--channel-num",
+            "1",
+            "--res-text-format",
+            "3",
+            "--speaker-number",
+            "0",
+            "--hotword-list",
+            "特努斯|11,Apple|8",
+            "--filter-modal",
+            "1",
+            "--sentence-max-length",
+            "20",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_transcriber.options is not None
+    assert fake_transcriber.options.provider_options == {
+        "asr_mode": "diarization",
+        "engine_model_type": "16k_zh",
+        "channel_num": 1,
+        "res_text_format": 3,
+        "speaker_number": 0,
+        "hotword_list": "特努斯|11,Apple|8",
+        "filter_modal": 1,
+        "sentence_max_length": 20,
+    }
+
+
 def test_transcribe_rejects_incomplete_speaker_role(tmp_path: Path) -> None:
     audio_path = tmp_path / "audio.mp3"
     audio_path.write_bytes(b"audio")

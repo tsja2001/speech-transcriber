@@ -25,6 +25,24 @@ FAILED_STATUS = 3
 RESULT_LINE_PATTERN = re.compile(
     r"^\[(?P<start>[^,\]]+),(?P<end>[^\]]+)\]\s*(?P<text>.+)$"
 )
+TENCENT_REQUEST_OPTION_FIELDS = {
+    "channel_num": "ChannelNum",
+    "res_text_format": "ResTextFormat",
+    "speaker_diarization": "SpeakerDiarization",
+    "speaker_number": "SpeakerNumber",
+    "hotword_id": "HotwordId",
+    "customization_id": "CustomizationId",
+    "emotion_recognition": "EmotionRecognition",
+    "emotional_energy": "EmotionalEnergy",
+    "convert_num_mode": "ConvertNumMode",
+    "filter_dirty": "FilterDirty",
+    "filter_punc": "FilterPunc",
+    "filter_modal": "FilterModal",
+    "sentence_max_length": "SentenceMaxLength",
+    "hotword_list": "HotwordList",
+    "keyword_lib_id": "KeyWordLibIdList",
+    "replace_text_id": "ReplaceTextId",
+}
 
 
 class TencentAsrClient(Protocol):
@@ -101,9 +119,15 @@ class TencentCloudTranscriber:
                     name=speaker_role.name,
                     audio_url=role_audio_url,
                 )
-            task_id = await self._create_task(audio_url, speaker_role)
+            task_id = await self._create_task(
+                audio_url,
+                speaker_role,
+                options.provider_options,
+            )
             task_status = await self._poll_until_finished(task_id)
             result = parse_task_status(task_status, provider=TENCENT_PROVIDER_NAME)
+            if options.provider_options:
+                result.metadata["provider_options"] = dict(options.provider_options)
             if speaker_role:
                 result.metadata["speaker_role"] = {
                     "name": speaker_role.name,
@@ -120,16 +144,25 @@ class TencentCloudTranscriber:
         self,
         audio_url: str,
         speaker_role: SpeakerRole | None,
+        provider_options: dict[str, Any],
     ) -> int:
         request = models.CreateRecTaskRequest()
-        request.EngineModelType = (
-            "16k_zh_en" if speaker_role else self.engine_model_type
+        request.EngineModelType = self._resolve_engine_model_type(
+            provider_options,
+            speaker_role,
         )
         request.ChannelNum = 1
         request.ResTextFormat = self.res_text_format
         request.SourceType = 0
         request.Url = audio_url
-        request.SpeakerDiarization = 3 if speaker_role else self.speaker_diarization
+        request.SpeakerDiarization = self._resolve_speaker_diarization(
+            provider_options,
+            speaker_role,
+        )
+        if provider_options.get("asr_mode") == "diarization" and (
+            "speaker_number" not in provider_options
+        ):
+            request.SpeakerNumber = 0
         if speaker_role:
             role_info = models.SpeakerRoleInfo()
             role_info.RoleName = speaker_role.name
@@ -141,6 +174,7 @@ class TencentCloudTranscriber:
         request.FilterPunc = 0
         request.FilterModal = 0
         request.ConvertNumMode = 1
+        self._apply_provider_options(request, provider_options, speaker_role)
 
         response = await asyncio.to_thread(self.client.CreateRecTask, request)
         task = _get_value(response, "Data", None)
@@ -152,6 +186,65 @@ class TencentCloudTranscriber:
                 retryable=True,
             )
         return int(task_id)
+
+    def _resolve_engine_model_type(
+        self,
+        provider_options: dict[str, Any],
+        speaker_role: SpeakerRole | None,
+    ) -> str:
+        asr_mode = provider_options.get("asr_mode")
+        if asr_mode not in {None, "standard", "large", "diarization", "role"}:
+            raise ProviderError(
+                TENCENT_PROVIDER_NAME,
+                f"Unsupported Tencent ASR mode: {asr_mode}",
+                retryable=False,
+            )
+        if speaker_role:
+            return "16k_zh_en"
+        if asr_mode == "role":
+            raise ProviderError(
+                TENCENT_PROVIDER_NAME,
+                "--asr-mode role requires speaker role audio options",
+                retryable=False,
+            )
+        if "engine_model_type" in provider_options:
+            return str(provider_options["engine_model_type"])
+        if asr_mode == "standard":
+            return "16k_zh"
+        if asr_mode == "large":
+            return "16k_zh_large"
+        return self.engine_model_type
+
+    def _resolve_speaker_diarization(
+        self,
+        provider_options: dict[str, Any],
+        speaker_role: SpeakerRole | None,
+    ) -> int:
+        if speaker_role:
+            return 3
+        if "speaker_diarization" in provider_options:
+            return int(provider_options["speaker_diarization"])
+        if provider_options.get("asr_mode") == "diarization":
+            return 1
+        return self.speaker_diarization
+
+    def _apply_provider_options(
+        self,
+        request: Any,
+        provider_options: dict[str, Any],
+        speaker_role: SpeakerRole | None,
+    ) -> None:
+        for option_name, request_field in TENCENT_REQUEST_OPTION_FIELDS.items():
+            if option_name not in provider_options:
+                continue
+            if speaker_role and option_name in {
+                "speaker_diarization",
+                "speaker_number",
+            }:
+                continue
+            if speaker_role and option_name == "engine_model_type":
+                continue
+            setattr(request, request_field, provider_options[option_name])
 
     async def _poll_until_finished(self, task_id: int) -> Any:
         deadline = time.monotonic() + self.timeout_seconds

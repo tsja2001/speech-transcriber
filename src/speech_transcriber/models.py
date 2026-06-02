@@ -44,6 +44,7 @@ class TranscribeOptions(BaseModel):
     diarize: bool = True
     provider: str = "tencent_cloud"
     speaker_role: SpeakerRole | None = None
+    provider_options: dict[str, Any] = Field(default_factory=dict)
 
 
 class ErrorInfo(BaseModel):

@@ -89,6 +89,96 @@ async def test_transcribe_uploads_creates_polls_and_cleans_up(
 
 
 @pytest.mark.asyncio
+async def test_transcribe_maps_explicit_tencent_asr_options(
+    sample_audio: Path,
+) -> None:
+    cos = FakeCosStorage()
+    client = FakeAsrClient(
+        [
+            SimpleNamespace(
+                Status=2,
+                AudioDuration=1.0,
+                ResultDetail=[
+                    SimpleNamespace(
+                        FinalSentence="hello",
+                        StartMs=0,
+                        EndMs=1000,
+                    )
+                ],
+            ),
+        ]
+    )
+    transcriber = TencentCloudTranscriber(
+        client=client,
+        cos_storage=cos,
+        poll_interval_seconds=0,
+    )
+
+    await transcriber.transcribe(
+        sample_audio,
+        TranscribeOptions(
+            provider_options={
+                "engine_model_type": "16k_zh",
+                "channel_num": 1,
+                "res_text_format": 3,
+                "speaker_diarization": 1,
+                "speaker_number": 0,
+                "hotword_list": "特努斯|11,Apple|8",
+                "filter_modal": 1,
+                "sentence_max_length": 20,
+            },
+        ),
+    )
+
+    request = client.create_requests[0]
+    assert request.EngineModelType == "16k_zh"
+    assert request.ChannelNum == 1
+    assert request.ResTextFormat == 3
+    assert request.SpeakerDiarization == 1
+    assert request.SpeakerNumber == 0
+    assert request.HotwordList == "特努斯|11,Apple|8"
+    assert request.FilterModal == 1
+    assert request.SentenceMaxLength == 20
+
+
+@pytest.mark.asyncio
+async def test_transcribe_asr_mode_diarization_enables_speaker_separation(
+    sample_audio: Path,
+) -> None:
+    cos = FakeCosStorage()
+    client = FakeAsrClient(
+        [
+            SimpleNamespace(
+                Status=2,
+                AudioDuration=1.0,
+                ResultDetail=[
+                    SimpleNamespace(
+                        FinalSentence="hello",
+                        StartMs=0,
+                        EndMs=1000,
+                        SpeakerId=0,
+                    )
+                ],
+            ),
+        ]
+    )
+    transcriber = TencentCloudTranscriber(
+        client=client,
+        cos_storage=cos,
+        poll_interval_seconds=0,
+    )
+
+    await transcriber.transcribe(
+        sample_audio,
+        TranscribeOptions(provider_options={"asr_mode": "diarization"}),
+    )
+
+    request = client.create_requests[0]
+    assert request.SpeakerDiarization == 1
+    assert request.SpeakerNumber == 0
+
+
+@pytest.mark.asyncio
 async def test_transcribe_uploads_role_audio_and_creates_role_separation_task(
     sample_audio: Path,
     tmp_path: Path,

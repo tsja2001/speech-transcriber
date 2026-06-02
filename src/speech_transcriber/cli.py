@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -66,6 +66,96 @@ def transcribe(
             help="Public URL for the target speaker voice sample.",
         ),
     ] = None,
+    asr_mode: Annotated[
+        str | None,
+        typer.Option(
+            "--asr-mode",
+            help=(
+                "Tencent ASR shortcut: standard, large, diarization, or role. "
+                "Explicit low-level options override mode defaults."
+            ),
+        ),
+    ] = None,
+    engine_model_type: Annotated[
+        str | None,
+        typer.Option("--engine-model-type", help="Tencent ASR EngineModelType."),
+    ] = None,
+    channel_num: Annotated[
+        int | None,
+        typer.Option("--channel-num", help="Tencent ASR ChannelNum."),
+    ] = None,
+    res_text_format: Annotated[
+        int | None,
+        typer.Option("--res-text-format", help="Tencent ASR ResTextFormat."),
+    ] = None,
+    speaker_diarization: Annotated[
+        int | None,
+        typer.Option(
+            "--speaker-diarization",
+            help=(
+                "Tencent ASR SpeakerDiarization: "
+                "0 off, 1 speaker split, 3 role split."
+            ),
+        ),
+    ] = None,
+    speaker_number: Annotated[
+        int | None,
+        typer.Option("--speaker-number", help="Tencent ASR SpeakerNumber."),
+    ] = None,
+    hotword_id: Annotated[
+        str | None,
+        typer.Option("--hotword-id", help="Tencent ASR HotwordId."),
+    ] = None,
+    hotword_list: Annotated[
+        str | None,
+        typer.Option(
+            "--hotword-list",
+            help='Tencent ASR temporary HotwordList, for example "腾讯云|10,ASR|11".',
+        ),
+    ] = None,
+    customization_id: Annotated[
+        str | None,
+        typer.Option("--customization-id", help="Tencent ASR CustomizationId."),
+    ] = None,
+    emotion_recognition: Annotated[
+        int | None,
+        typer.Option("--emotion-recognition", help="Tencent ASR EmotionRecognition."),
+    ] = None,
+    emotional_energy: Annotated[
+        int | None,
+        typer.Option("--emotional-energy", help="Tencent ASR EmotionalEnergy."),
+    ] = None,
+    convert_num_mode: Annotated[
+        int | None,
+        typer.Option("--convert-num-mode", help="Tencent ASR ConvertNumMode."),
+    ] = None,
+    filter_dirty: Annotated[
+        int | None,
+        typer.Option("--filter-dirty", help="Tencent ASR FilterDirty."),
+    ] = None,
+    filter_punc: Annotated[
+        int | None,
+        typer.Option("--filter-punc", help="Tencent ASR FilterPunc."),
+    ] = None,
+    filter_modal: Annotated[
+        int | None,
+        typer.Option("--filter-modal", help="Tencent ASR FilterModal."),
+    ] = None,
+    sentence_max_length: Annotated[
+        int | None,
+        typer.Option("--sentence-max-length", help="Tencent ASR SentenceMaxLength."),
+    ] = None,
+    keyword_lib_id: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--keyword-lib-id",
+            help="Tencent ASR KeyWordLibIdList entry. Repeat for multiple IDs.",
+        ),
+    ] = None,
+    replace_text_id: Annotated[
+        str | None,
+        typer.Option("--replace-text-id", help="Tencent ASR ReplaceTextId."),
+    ] = None,
 ) -> None:
     """Transcribe a local audio file and print the result."""
     if not audio_path.exists():
@@ -80,7 +170,29 @@ def transcribe(
         typer.echo(f"Speaker role audio file not found: {speaker_role_audio}", err=True)
         raise typer.Exit(code=1)
     try:
-        result = asyncio.run(_transcribe(audio_path, provider, speaker_role))
+        provider_options = _build_provider_options(
+            asr_mode=asr_mode,
+            engine_model_type=engine_model_type,
+            channel_num=channel_num,
+            res_text_format=res_text_format,
+            speaker_diarization=speaker_diarization,
+            speaker_number=speaker_number,
+            hotword_id=hotword_id,
+            hotword_list=hotword_list,
+            customization_id=customization_id,
+            emotion_recognition=emotion_recognition,
+            emotional_energy=emotional_energy,
+            convert_num_mode=convert_num_mode,
+            filter_dirty=filter_dirty,
+            filter_punc=filter_punc,
+            filter_modal=filter_modal,
+            sentence_max_length=sentence_max_length,
+            keyword_lib_id=keyword_lib_id,
+            replace_text_id=replace_text_id,
+        )
+        result = asyncio.run(
+            _transcribe(audio_path, provider, speaker_role, provider_options)
+        )
     except SpeechTranscriberError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -156,15 +268,31 @@ def _build_speaker_role(
     return SpeakerRole(name=name, audio_path=audio_path, audio_url=audio_url)
 
 
+def _build_provider_options(**values: Any) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    for key, value in values.items():
+        if value is None:
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        options[key] = value
+    return options
+
+
 async def _transcribe(
     audio_path: Path,
     provider: str | None,
     speaker_role: SpeakerRole | None,
+    provider_options: dict[str, Any] | None = None,
 ) -> TranscriptResult:
     settings = Settings()
     transcriber = get_transcriber(settings, provider)
     provider_name = provider or settings.default_provider
     return await transcriber.transcribe(
         audio_path,
-        TranscribeOptions(provider=provider_name, speaker_role=speaker_role),
+        TranscribeOptions(
+            provider=provider_name,
+            speaker_role=speaker_role,
+            provider_options=provider_options or {},
+        ),
     )
